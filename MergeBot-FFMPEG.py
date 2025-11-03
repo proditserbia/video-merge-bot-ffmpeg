@@ -313,8 +313,8 @@ class JobConfig:
     concurrency: int
 
 QUALITY_MAP = {
-    '2K': (2560, 1440),
-    '4K': (3840, 2160),
+    '2K': (1440, 2560),
+    '4K': (2160, 3840),
 }
 
 def _is_media_folder(p: Path) -> bool:
@@ -351,8 +351,13 @@ def preflight_concat(ffmpeg_bin: str, list_file: Path) -> bool:
 # -------------------------------------------------
 # Filtergraph cmd builder (ROBUST CONCAT)
 # -------------------------------------------------
+# --- target za true vertical ---
+VERT_W, VERT_H = 1440, 2560
+
 def build_ffmpeg_cmd_filtergraph(files: List[Path], target_seconds: int, out_path: Path, cfg: JobConfig) -> List[str]:
-    w, h = QUALITY_MAP.get(cfg.quality, (2560, 1440))
+    # IGNORIŠEMO QUALITY_MAP za ovaj mod i forsiramo 1440x1920
+    w, h = VERT_W, VERT_H
+
     vb_m = max(15, min(50, int(cfg.bitrate_mbps)))
     vb = f"{vb_m}M"
     maxrate = vb
@@ -362,10 +367,15 @@ def build_ffmpeg_cmd_filtergraph(files: List[Path], target_seconds: int, out_pat
     for f in files:
         cmd += ["-i", str(f)]
 
+    # COVER logika: skaliranje do "prekrivanja" + crop na tačno 1080x2560.
+    # Ovo uklanja sve crne trake, ali kod izvora koji nisu tačno 9:16, biće blagi crop gore/dole ili levo/desno.
     vf_steps = (
-        f"fps=30,scale={w}:{h}:force_original_aspect_ratio=decrease,"
-        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p,setsar=1:1,setpts=PTS-STARTPTS"
+        f"fps=30,"
+        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"crop={w}:{h},"
+        f"format=yuv420p,setsar=1:1,setpts=PTS-STARTPTS"
     )
+
     af_steps = (
         "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
         "aresample=48000:async=1:min_comp=0.001:first_pts=0,asetpts=PTS-STARTPTS"
